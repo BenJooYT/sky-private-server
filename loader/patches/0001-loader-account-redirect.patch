@@ -1,0 +1,384 @@
+diff --git a/src/htinternal.hpp b/src/htinternal.hpp
+index cbcb0d9..e499138 100644
+--- a/src/htinternal.hpp
++++ b/src/htinternal.hpp
+@@ -572,6 +572,32 @@ struct ModLoaderOptions {
+ 
+ extern ModLoaderOptions gModLoaderOptions;
+ 
++// ----------------------------------------------------------------------------
++// [SECTION] Account-server redirect declarations.
++// ----------------------------------------------------------------------------
++
++struct HTiRedirectSettings {
++  bool enabled = false;
++  bool forceHttp = false;
++  std::string accountFrom = "skynet.radiance.thatgamecompany.com";
++  std::string host;
++};
++
++// Thread-safe snapshot / update of the active redirect settings.
++HTiRedirectSettings HTiRedirectGetSettings();
++void HTiRedirectSetSettings(const HTiRedirectSettings &settings);
++
++// Read/write the "redirect" object of options.json.
++void HTiRedirectLoadFromJson(const cJSON *root);
++void HTiRedirectSaveToJson(cJSON *root);
++
++// Resolve signatures and install the redirect hooks. Call once the game module
++// address is known (HTiSetupAll()).
++void HTiRedirectInit();
++
++// Draw the redirect controls inside the loader settings menu.
++void HTiRedirectRenderSettings();
++
+ // Load options from the specified file.
+ HTStatus HTiOptionsLoadFromFile(
+   const wchar_t *);
+diff --git a/src/options.cpp b/src/options.cpp
+index 10d896f..a87bba6 100644
+--- a/src/options.cpp
++++ b/src/options.cpp
+@@ -139,6 +139,8 @@ HTStatus HTiOptionsLoadFromFile(
+ 
+   deserializeAllMods(json);
+ 
++  HTiRedirectLoadFromJson(json);
++
+   cJSON_Delete(json);
+ 
+   return HT_SUCCESS;
+@@ -268,6 +270,8 @@ static cJSON *HTiOptionsWriteToMem() {
+   for (auto it = memOptions.begin(); it != memOptions.end(); it++)
+     saveOptionsForMod(modOptions, it->first);
+ 
++  HTiRedirectSaveToJson(root);
++
+   return root;
+ }
+ 
+diff --git a/src/redirect.cpp b/src/redirect.cpp
+new file mode 100644
+index 0000000..84f7fe1
+--- /dev/null
++++ b/src/redirect.cpp
+@@ -0,0 +1,294 @@
++// ----------------------------------------------------------------------------
++// Account-server redirect, built into HT's Mod Loader.
++//
++// Rewrites the account HTTP + WebSocket destination so the game talks to a
++// private server. Settings live in options.json and are edited from the loader
++// menu (Settings -> Server Redirect). Default: disabled.
++// ----------------------------------------------------------------------------
++#include <windows.h>
++#include <cstddef>
++#include <cstdio>
++#include <cstring>
++#include <mutex>
++#include <string>
++
++#include "htinternal.hpp"
++#include "htmodloader/htmodloader.h"
++#include "imgui.h"
++
++namespace {
++
++// Layout of the game's Net::Uri (mirrors ssl-patch):
++//   protocol[10] +0, domain[128] +10, port[6] +138, path[256] +144.
++struct NetUri {
++  char protocol[10];
++  char domain[128];
++  char port[6];
++  char path[256];
++};
++static_assert(sizeof(NetUri) == 400, "Net::Uri must be 400 bytes");
++static_assert(offsetof(NetUri, domain) == 10, "domain offset");
++static_assert(offsetof(NetUri, port) == 138, "port offset");
++static_assert(offsetof(NetUri, path) == 144, "path offset");
++
++// Signature of HttpClient::Request and the account WebSocket Connect.
++const HTAsmSig kSigHttpRequest = {
++  "4C 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 85 ?? ?? ?? ?? 89 86",
++  HTSigScanType_E8,
++  0x07,
++};
++const HTAsmSig kSigWsConnect = {
++  "55 41 57 41 56 56 57 53 48 81 EC B8 01 00 00 48 8D AC 24 80 00 00 00 "
++  "4C 89 CE 4C 89 C7 48 89 D3 49 89 CE C5 F8 57 C0",
++  HTSigScanType_Direct,
++  0,
++};
++
++using RequestFn = void *(*)(void *thisptr, void *ret, NetUri *uri, void *args);
++using WsConnectFn = char (*)(void *thisptr, const char *url, const char *host, void *args);
++
++std::mutex gMutex;
++HTiRedirectSettings gSettings;
++RequestFn gOrigRequest = nullptr;
++WsConnectFn gOrigWsConnect = nullptr;
++unsigned long long gHttpHits = 0, gWsHits = 0;
++bool gInstalled = false;
++
++void setField(char *dst, size_t n, const std::string &s) {
++  strncpy(dst, s.c_str(), n - 1);
++  dst[n - 1] = '\0';
++}
++
++// Split "host[:port]" into parts. Returns true when a port was present.
++bool splitTarget(const std::string &target, std::string &host, std::string &port) {
++  const size_t colon = target.rfind(':');
++  if (colon == std::string::npos) {
++    host = target;
++    port.clear();
++    return false;
++  }
++  host = target.substr(0, colon);
++  port = target.substr(colon + 1);
++  return true;
++}
++
++// Rewrite a live Net::Uri when its domain matches the configured `from`.
++void applyUri(NetUri *uri, const HTiRedirectSettings &s) {
++  if (!uri) return;
++  if (s.forceHttp) strcpy(uri->protocol, "http");
++
++  const std::string domain(uri->domain);
++  if (s.accountFrom.empty() || s.accountFrom != domain) return;
++
++  std::string host, port;
++  splitTarget(s.host, host, port);
++  setField(uri->domain, sizeof(uri->domain), host);
++  setField(uri->port, sizeof(uri->port), port);
++}
++
++// Rewrite an "https://host[:port]/path" string when the host matches.
++bool applyUrl(const char *url, char *dst, size_t n, const HTiRedirectSettings &s) {
++  if (!url || !dst || n == 0) return false;
++
++  const char *schemeEnd = strstr(url, "://");
++  if (!schemeEnd) {
++    snprintf(dst, n, "%s", url);
++    return false;
++  }
++
++  std::string scheme(url, schemeEnd);
++  const char *hostBegin = schemeEnd + 3;
++  const char *path = strchr(hostBegin, '/');
++  std::string hostPort = path ? std::string(hostBegin, path) : std::string(hostBegin);
++  if (!path) path = "";
++
++  std::string host, port;
++  const bool hasPort = splitTarget(hostPort, host, port);
++
++  bool changed = false;
++  if (s.forceHttp && scheme != "http") {
++    scheme = "http";
++    changed = true;
++  }
++
++  if (!s.accountFrom.empty() && s.accountFrom == host) {
++    std::string toHost, toPort;
++    const bool toHasPort = splitTarget(s.host, toHost, toPort);
++    host = toHost;
++    port = toHasPort ? toPort : std::string();
++    changed = true;
++  }
++
++  (void)hasPort;
++  snprintf(dst, n, "%s://%s%s%s%s", scheme.c_str(), host.c_str(),
++           port.empty() ? "" : ":", port.c_str(), path);
++  return changed;
++}
++
++void *detourRequest(void *thisptr, void *ret, NetUri *uri, void *args) {
++  HTiRedirectSettings s;
++  {
++    std::lock_guard<std::mutex> lock(gMutex);
++    s = gSettings;
++  }
++  if (s.enabled) applyUri(uri, s);
++  gHttpHits++;
++  return gOrigRequest ? gOrigRequest(thisptr, ret, uri, args) : nullptr;
++}
++
++char detourWsConnect(void *thisptr, const char *url, const char *host, void *args) {
++  char rewritten[256];
++  snprintf(rewritten, sizeof(rewritten), "%s", url ? url : "");
++
++  HTiRedirectSettings s;
++  {
++    std::lock_guard<std::mutex> lock(gMutex);
++    s = gSettings;
++  }
++
++  bool changed = false;
++  if (s.enabled) changed = applyUrl(url, rewritten, sizeof(rewritten), s);
++
++  char hostBuf[128];
++  snprintf(hostBuf, sizeof(hostBuf), "%s", host ? host : "");
++  if (changed) {
++    const char *scheme = strstr(rewritten, "://");
++    if (scheme) {
++      scheme += 3;
++      const char *end = strchr(scheme, '/');
++      std::string hp = end ? std::string(scheme, end) : std::string(scheme);
++      std::string h, p;
++      splitTarget(hp, h, p);
++      snprintf(hostBuf, sizeof(hostBuf), "%s", h.c_str());
++    }
++  }
++
++  gWsHits++;
++  return gOrigWsConnect ? gOrigWsConnect(thisptr, rewritten, hostBuf, args) : 0;
++}
++
++std::string trimmed(const char *text) {
++  std::string v = text ? text : "";
++  const char *ws = " \t\r\n";
++  const size_t b = v.find_first_not_of(ws);
++  if (b == std::string::npos) return {};
++  const size_t e = v.find_last_not_of(ws);
++  return v.substr(b, e - b + 1);
++}
++
++} // namespace
++
++HTiRedirectSettings HTiRedirectGetSettings() {
++  std::lock_guard<std::mutex> lock(gMutex);
++  return gSettings;
++}
++
++void HTiRedirectSetSettings(const HTiRedirectSettings &settings) {
++  std::lock_guard<std::mutex> lock(gMutex);
++  gSettings = settings;
++}
++
++void HTiRedirectLoadFromJson(const cJSON *root) {
++  if (!root) return;
++  const cJSON *r = cJSON_GetObjectItemCaseSensitive(root, "redirect");
++  if (!r) return;
++
++  HTiRedirectSettings s = HTiRedirectGetSettings();
++  const cJSON *v;
++
++  if ((v = cJSON_GetObjectItemCaseSensitive(r, "enabled")) && cJSON_IsBool(v))
++    s.enabled = cJSON_IsTrue(v) != 0;
++  if ((v = cJSON_GetObjectItemCaseSensitive(r, "force_http")) && cJSON_IsBool(v))
++    s.forceHttp = cJSON_IsTrue(v) != 0;
++  if ((v = cJSON_GetObjectItemCaseSensitive(r, "account_from")) && cJSON_IsString(v))
++    s.accountFrom = cJSON_GetStringValue(v);
++  if ((v = cJSON_GetObjectItemCaseSensitive(r, "host")) && cJSON_IsString(v))
++    s.host = cJSON_GetStringValue(v);
++
++  HTiRedirectSetSettings(s);
++  LOGI("Redirect: enabled=%d force_http=%d %s -> '%s'\n", s.enabled ? 1 : 0,
++       s.forceHttp ? 1 : 0, s.accountFrom.c_str(), s.host.c_str());
++}
++
++void HTiRedirectSaveToJson(cJSON *root) {
++  if (!root) return;
++  const HTiRedirectSettings s = HTiRedirectGetSettings();
++
++  cJSON *r = cJSON_CreateObject();
++  cJSON_AddBoolToObject(r, "enabled", s.enabled);
++  cJSON_AddBoolToObject(r, "force_http", s.forceHttp);
++  cJSON_AddStringToObject(r, "account_from", s.accountFrom.c_str());
++  cJSON_AddStringToObject(r, "host", s.host.c_str());
++  cJSON_AddItemToObject(root, "redirect", r);
++}
++
++void HTiRedirectInit() {
++  if (gInstalled) return;
++  gInstalled = true;
++
++  void *fnRequest = HTSigScan(&kSigHttpRequest);
++  void *fnWs = HTSigScan(&kSigWsConnect);
++
++  if (fnRequest) {
++    if (HTAsmHookCreateRaw(gModLoaderHandle, fnRequest, (LPVOID)&detourRequest,
++                           (LPVOID *)&gOrigRequest) == HT_SUCCESS &&
++        HTAsmHookEnable(gModLoaderHandle, fnRequest) == HT_SUCCESS) {
++      LOGI("Redirect: HttpClient::Request hooked at 0x%p\n", fnRequest);
++    } else {
++      LOGI("Redirect: could not hook HttpClient::Request\n");
++    }
++  } else {
++    LOGI("Redirect: HttpClient::Request signature not found\n");
++  }
++
++  if (fnWs) {
++    if (HTAsmHookCreateRaw(gModLoaderHandle, fnWs, (LPVOID)&detourWsConnect,
++                           (LPVOID *)&gOrigWsConnect) == HT_SUCCESS &&
++        HTAsmHookEnable(gModLoaderHandle, fnWs) == HT_SUCCESS) {
++      LOGI("Redirect: AccountServerWebSocket::Connect hooked at 0x%p\n", fnWs);
++    } else {
++      LOGI("Redirect: could not hook AccountServerWebSocket::Connect\n");
++    }
++  } else {
++    LOGI("Redirect: AccountServerWebSocket::Connect signature not found\n");
++  }
++}
++
++void HTiRedirectRenderSettings() {
++  HTiRedirectSettings s = HTiRedirectGetSettings();
++  static char hostBuf[192] = {0};
++  static bool ready = false;
++  bool changed = false;
++
++  if (!ready) {
++    snprintf(hostBuf, sizeof(hostBuf), "%s", s.host.c_str());
++    ready = true;
++  }
++
++  if (ImGui::Checkbox("Enable account redirect", &s.enabled))
++    changed = true;
++
++  ImGui::SetNextItemWidth(300);
++  bool commit = ImGui::InputText("Server host", hostBuf, sizeof(hostBuf),
++                                 ImGuiInputTextFlags_EnterReturnsTrue);
++  ImGui::SameLine();
++  if (ImGui::Button("Save host")) commit = true;
++  if (commit) {
++    s.host = trimmed(hostBuf);
++    snprintf(hostBuf, sizeof(hostBuf), "%s", s.host.c_str());
++    changed = true;
++  }
++
++  if (ImGui::Checkbox("force_http (plain http/ws)", &s.forceHttp))
++    changed = true;
++
++  if (changed) {
++    HTiRedirectSetSettings(s);
++    HTiOptionsMarkDirty();
++  }
++
++  ImGui::TextDisabled("host or host:port, no scheme");
++  ImGui::Text("from:  %s", s.accountFrom.c_str());
++  ImGui::Text("to:    %s", s.host.empty() ? "(unset)" : s.host.c_str());
++  ImGui::Text("hits:  %llu http / %llu ws", gHttpHits, gWsHits);
++}
+diff --git a/src/setup.cpp b/src/setup.cpp
+index 03db987..f804f94 100644
+--- a/src/setup.cpp
++++ b/src/setup.cpp
+@@ -26,4 +26,7 @@ void HTiSetupAll() {
+   HTiOptionsLoadFromFile(optionsPath.c_str());
+ 
+   HTiLoadMods();
++
++  // Install the built-in account redirect hooks (no-ops until enabled).
++  HTiRedirectInit();
+ }
+diff --git a/src/ui/menu.cpp b/src/ui/menu.cpp
+index b76240b..1c9ad6e 100644
+--- a/src/ui/menu.cpp
++++ b/src/ui/menu.cpp
+@@ -237,6 +237,8 @@ static void displayLoaderSettings() {
+ void HTiMenuSettings() {
+   if (ImGui::CollapsingHeader("Loader Settings"))
+     displayLoaderSettings();
++  if (ImGui::CollapsingHeader("Server Redirect"))
++    HTiRedirectRenderSettings();
+   if (ImGui::CollapsingHeader("Key Bindings"))
+     displayAndUpdateKeys();
+ }

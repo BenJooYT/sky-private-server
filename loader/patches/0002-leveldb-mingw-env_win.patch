@@ -1,0 +1,20 @@
+diff --git a/util/env_win.cc b/util/env_win.cc
+index c5bb6aa..cbee78f 100644
+--- a/util/env_win.cc
++++ b/util/env_win.cc
+@@ -68,7 +68,14 @@ namespace leveldb {
+ 		}
+ 
+ 		static std::wstring GetFullPath(const std::string& fname) {
+-			return ::port::toFilePath(fname);
++			// port::toFilePath() is std::string under MinGW, so widen it for the
++			// wide-character Win32 calls used below.
++			const std::string narrow = ::port::toFilePath(fname);
++			int len = MultiByteToWideChar(CP_UTF8, 0, narrow.c_str(), (int)narrow.size(), nullptr, 0);
++			std::wstring wide((size_t)(len > 0 ? len : 0), L'\0');
++			if (len > 0)
++				MultiByteToWideChar(CP_UTF8, 0, narrow.c_str(), (int)narrow.size(), &wide[0], len);
++			return wide;
+ 		}
+ 
+ 		static void EnsureDirectory(const std::string& fname)
