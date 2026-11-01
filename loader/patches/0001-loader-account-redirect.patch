@@ -1,5 +1,5 @@
 diff --git a/src/htinternal.hpp b/src/htinternal.hpp
-index cbcb0d9..e499138 100644
+index cbcb0d9..507491c 100644
 --- a/src/htinternal.hpp
 +++ b/src/htinternal.hpp
 @@ -572,6 +572,32 @@ struct ModLoaderOptions {
@@ -13,7 +13,7 @@ index cbcb0d9..e499138 100644
 +struct HTiRedirectSettings {
 +  bool enabled = false;
 +  bool forceHttp = false;
-+  std::string accountFrom = "skynet.radiance.thatgamecompany.com";
++  std::string accountFrom = "live.radiance.thatgamecompany.com";
 +  std::string host;
 +};
 +
@@ -59,10 +59,10 @@ index 10d896f..a87bba6 100644
  
 diff --git a/src/redirect.cpp b/src/redirect.cpp
 new file mode 100644
-index 0000000..84f7fe1
+index 0000000..b675fa2
 --- /dev/null
 +++ b/src/redirect.cpp
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,327 @@
 +// ----------------------------------------------------------------------------
 +// Account-server redirect, built into HT's Mod Loader.
 +//
@@ -71,6 +71,7 @@ index 0000000..84f7fe1
 +// menu (Settings -> Server Redirect). Default: disabled.
 +// ----------------------------------------------------------------------------
 +#include <windows.h>
++#include <cstdarg>
 +#include <cstddef>
 +#include <cstdio>
 +#include <cstring>
@@ -79,9 +80,26 @@ index 0000000..84f7fe1
 +
 +#include "htinternal.hpp"
 +#include "htmodloader/htmodloader.h"
++#include "MinHook.h"
 +#include "imgui.h"
 +
 +namespace {
++
++// Append a line to <game>\htmodloader\redirect-debug.log. Used to find where
++// startup blocks if the game hangs.
++void tracef(const char *fmt, ...) {
++  char path[MAX_PATH];
++  snprintf(path, sizeof(path), "%s\\redirect-debug.log", gPathData);
++  FILE *f = fopen(path, "a");
++  if (!f) return;
++  va_list ap;
++  va_start(ap, fmt);
++  vfprintf(f, fmt, ap);
++  va_end(ap);
++  fputc('\n', f);
++  fflush(f);
++  fclose(f);
++}
 +
 +// Layout of the game's Net::Uri (mirrors ssl-patch):
 +//   protocol[10] +0, domain[128] +10, port[6] +138, path[256] +144.
@@ -196,12 +214,16 @@ index 0000000..84f7fe1
 +    std::lock_guard<std::mutex> lock(gMutex);
 +    s = gSettings;
 +  }
++  if (uri && gHttpHits < 60)
++    tracef("req: %s://%s:%s%s", uri->protocol, uri->domain, uri->port, uri->path);
 +  if (s.enabled) applyUri(uri, s);
 +  gHttpHits++;
 +  return gOrigRequest ? gOrigRequest(thisptr, ret, uri, args) : nullptr;
 +}
 +
 +char detourWsConnect(void *thisptr, const char *url, const char *host, void *args) {
++  tracef("ws: %s", url ? url : "");
++
 +  char rewritten[256];
 +  snprintf(rewritten, sizeof(rewritten), "%s", url ? url : "");
 +
@@ -291,13 +313,20 @@ index 0000000..84f7fe1
 +  if (gInstalled) return;
 +  gInstalled = true;
 +
++  tracef("init: start");
 +  void *fnRequest = HTSigScan(&kSigHttpRequest);
++  tracef("init: http sig -> %p", fnRequest);
 +  void *fnWs = HTSigScan(&kSigWsConnect);
++  tracef("init: ws sig -> %p", fnWs);
 +
 +  if (fnRequest) {
-+    if (HTAsmHookCreateRaw(gModLoaderHandle, fnRequest, (LPVOID)&detourRequest,
-+                           (LPVOID *)&gOrigRequest) == HT_SUCCESS &&
-+        HTAsmHookEnable(gModLoaderHandle, fnRequest) == HT_SUCCESS) {
++    // HTAsmHookCreateRaw() only accepts registered *mod* handles, so the loader
++    // installs its own hooks through MinHook directly.
++    MH_STATUS created = MH_CreateHook(fnRequest, (LPVOID)&detourRequest,
++                                      (LPVOID *)&gOrigRequest);
++    tracef("init: http create -> %d", (int)created);
++    if (created == MH_OK) {
++      tracef("init: http enable -> %d", (int)MH_EnableHook(fnRequest));
 +      LOGI("Redirect: HttpClient::Request hooked at 0x%p\n", fnRequest);
 +    } else {
 +      LOGI("Redirect: could not hook HttpClient::Request\n");
@@ -307,9 +336,11 @@ index 0000000..84f7fe1
 +  }
 +
 +  if (fnWs) {
-+    if (HTAsmHookCreateRaw(gModLoaderHandle, fnWs, (LPVOID)&detourWsConnect,
-+                           (LPVOID *)&gOrigWsConnect) == HT_SUCCESS &&
-+        HTAsmHookEnable(gModLoaderHandle, fnWs) == HT_SUCCESS) {
++    MH_STATUS created = MH_CreateHook(fnWs, (LPVOID)&detourWsConnect,
++                                      (LPVOID *)&gOrigWsConnect);
++    tracef("init: ws create -> %d", (int)created);
++    if (created == MH_OK) {
++      tracef("init: ws enable -> %d", (int)MH_EnableHook(fnWs));
 +      LOGI("Redirect: AccountServerWebSocket::Connect hooked at 0x%p\n", fnWs);
 +    } else {
 +      LOGI("Redirect: could not hook AccountServerWebSocket::Connect\n");
@@ -317,6 +348,8 @@ index 0000000..84f7fe1
 +  } else {
 +    LOGI("Redirect: AccountServerWebSocket::Connect signature not found\n");
 +  }
++
++  tracef("init: done");
 +}
 +
 +void HTiRedirectRenderSettings() {
@@ -358,16 +391,17 @@ index 0000000..84f7fe1
 +  ImGui::Text("hits:  %llu http / %llu ws", gHttpHits, gWsHits);
 +}
 diff --git a/src/setup.cpp b/src/setup.cpp
-index 03db987..f804f94 100644
+index 03db987..9e9a98b 100644
 --- a/src/setup.cpp
 +++ b/src/setup.cpp
-@@ -26,4 +26,7 @@ void HTiSetupAll() {
+@@ -26,4 +26,8 @@ void HTiSetupAll() {
    HTiOptionsLoadFromFile(optionsPath.c_str());
  
    HTiLoadMods();
 +
 +  // Install the built-in account redirect hooks (no-ops until enabled).
 +  HTiRedirectInit();
++  LOGI("setup: complete\n");
  }
 diff --git a/src/ui/menu.cpp b/src/ui/menu.cpp
 index b76240b..1c9ad6e 100644

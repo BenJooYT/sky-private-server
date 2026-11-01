@@ -12,17 +12,21 @@ patch to [leveldb-mcpe](https://github.com/extremeheat/leveldb-mcpe).
 
 ## Prerequisites
 
-- **MinGW-w64 15.1.0, posix threads, UCRT** — e.g. a WinLibs build:
-  <https://github.com/brechtsanders/winlibs_mingw/releases>
-  (`winlibs-x86_64-posix-seh-gcc-15.1.0-mingw-w64ucrt-*.zip`)
-- **CMake** (the one bundled with WinLibs works)
+- **MinGW-w64 15.1.0 with the win32 threading model, UCRT** — e.g.
+  [niXman/mingw-builds-binaries](https://github.com/niXman/mingw-builds-binaries):
+  `x86_64-15.1.0-release-win32-seh-ucrt-rt_v12-rev0.7z`
+- **CMake**
 - **git**
 - zlib headers (only used to compile leveldb — the library it links is vendored)
 
-> The threading model matters. Upstream ships `libleveldb.a` built with a
-> **win32-threads** toolchain; linking it with a posix-threads build fails with
-> `undefined reference to __gthr_win32_mutex_*`. That is why leveldb is rebuilt
-> below instead of using the archive in the repository.
+> **The threading model is not optional.** A posix-threads MinGW build of this
+> loader *deadlocks Sky at startup* — window opens, then zero CPU and every
+> thread waiting. It builds and links fine, so the failure is easy to miss.
+> Use the win32-threads toolchain.
+>
+> The prebuilt `libraries/leveldb/lib/libleveldb.a` shipped by upstream cannot be
+> linked with MinGW at all: it references the MSVC-only import
+> `__imp__snprintf_s`. That is why leveldb is rebuilt below.
 
 ## 1. Apply the loader patch
 
@@ -41,7 +45,7 @@ Files touched:
 - `src/ui/menu.cpp` — **Settings → Server Redirect**
 - `src/setup.cpp` — install the hooks during setup
 
-## 2. Rebuild leveldb
+## 2. Rebuild leveldb (with the same win32 toolchain)
 
 ```bash
 git clone https://github.com/extremeheat/leveldb-mcpe.git
@@ -93,6 +97,19 @@ dotnet publish /path/to/sky-private-server/installer/SkySwitch.csproj \
 Settings are stored in `htmodloader/options.json` under `"redirect"` and are
 read on every request, so the in-game toggle and address edits apply immediately.
 Default state is **disabled**.
+
+> The hooks are installed with **MinHook directly**, not with
+> `HTAsmHookCreateRaw()`. That API validates its owner handle with
+> `HTiCheckHandleType(owner, HTHandleType_Mod)` and returns `HT_FAIL` for the
+> loader's own module, since it is not a registered *mod*.
+
+### Which host to rewrite
+
+The account host is **`live.radiance.thatgamecompany.com`** (the CDN is
+`live.sky.resources.cdn.thatgamecompany.com` and must be left alone). To confirm
+on a new game build, the patch writes what it sees to
+`<game>\htmodloader\redirect-debug.log` (`req: https://host/path` lines) on the
+first ~60 requests — copy the account host from there into `account_from`.
 
 ### Signatures
 

@@ -35,7 +35,7 @@ private server, with a switch to go back to the official servers at any time.
 
 ## What it actually does
 
-Sky talks to `skynet.radiance.thatgamecompany.com` over HTTPS and a WebSocket.
+Sky talks to `live.radiance.thatgamecompany.com` over HTTPS and a WebSocket.
 The loader hooks the two functions that build those requests and rewrites the
 destination host when it exactly matches the configured `from` host:
 
@@ -53,7 +53,7 @@ Settings live in `<game>\htmodloader\options.json`:
   "redirect": {
     "enabled": true,
     "force_http": false,
-    "account_from": "skynet.radiance.thatgamecompany.com",
+    "account_from": "live.radiance.thatgamecompany.com",
     "host": "my-server.example.com:9000"
   }
 }
@@ -117,6 +117,7 @@ leveldb rebuild that upstream's prebuilt archive needs — are in
 | Login fails / hangs | Wrong `host`, or the server speaks plain HTTP while `force_http` is `false` (or vice versa). |
 | Login works, nobody else in the world | UDP/ENet room traffic isn't routed (see above). |
 | Game crashes at launch | Something else is already hooking the same functions — remove the standalone `sslpatch` mod if it is installed. |
+| Window opens then freezes (0% CPU, all threads waiting) | The loader was built with a posix-threads MinGW. Rebuild with the win32-threads toolchain (see `loader/README.md`). |
 
 Diagnostics are written by the loader; check the game folder for
 `htmodloader\` contents and the loader log.

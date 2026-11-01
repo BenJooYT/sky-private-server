@@ -9,7 +9,7 @@ internal static class Installer
 {
     public const string OptionsRelPath = "htmodloader/options.json";
     public const string StateFileName = ".skyswitch-state.json";
-    public const string DefaultAccountHost = "skynet.radiance.thatgamecompany.com";
+    public const string DefaultAccountHost = "live.radiance.thatgamecompany.com";
     private const string SteamAppId = "2325290";
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };

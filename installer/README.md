@@ -45,7 +45,7 @@ creates a second set of backups.
   "redirect": {
     "enabled": true,
     "force_http": false,
-    "account_from": "skynet.radiance.thatgamecompany.com",
+    "account_from": "live.radiance.thatgamecompany.com",
     "host": "my-server.example.com:9000"
   }
 }
