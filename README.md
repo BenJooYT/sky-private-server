@@ -18,7 +18,8 @@ private server, with a switch to go back to the official servers at any time.
 
 ## Quick start
 
-1. Grab `SkySwitch.exe` from [Releases](../../releases) (or build it, see below).
+1. Download **`SkySwitch.exe`** from the top of this repository (or build it,
+   see below).
 2. Run it. It finds your Sky folder automatically via Steam.
 3. Type the server address you were given (e.g. `my-server.example.com:9000`)
    and click **Install**.
