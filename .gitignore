@@ -6,3 +6,5 @@ dist/
 .vs/
 build-mingw*/
 *.pdb
+*.o
+loader/html-sky/libraries/*/lib*.a

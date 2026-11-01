@@ -74,8 +74,9 @@ work through a tunnel; multiplayer sync does not.
 ```
 installer/           SkySwitch — C# WinForms app (embeds the loader payload)
   payload/           winhttp.dll + html-config.json that get copied into the game
-loader/              patch + build notes for the modified HTML-Sky loader
-  patches/           diffs against upstream HTML-Sky and leveldb-mcpe
+loader/              the modded loader — everything needed to build it
+  html-sky/          full HTML-Sky source (vendored), includes the redirect
+  patches/           reference diffs against upstream HTML-Sky and leveldb-mcpe
 scripts/             helper scripts
 licenses/            third-party license texts
 ```
@@ -96,15 +97,19 @@ Produces a single `dist/SkySwitch.exe` (payload is embedded). Or run
 
 ### Loader (`winhttp.dll`)
 
-Requires **MinGW-w64 15.1.0 (posix, ucrt)**. The exact steps — including the
-leveldb rebuild that upstream's prebuilt archive needs — are in
-[`loader/README.md`](loader/README.md). Short version:
+Requires **MinGW-w64 15.1.0 with the win32 threading model (UCRT)**. The full
+modified source, leveldb archive and all dependencies are in `loader/html-sky/`,
+so no external clone is needed:
 
-1. Clone [HTML-Sky](https://github.com/HTMonkeyG/HTML-Sky) at `ccccbd5`.
-2. Apply `loader/patches/0001-loader-account-redirect.patch`.
-3. Rebuild `leveldb-mcpe` (patch `0002`) and replace `libraries/leveldb/lib/libleveldb.a`.
-4. `mingw32-make all` → `dist/winhttp.dll`.
-5. Drop it into `installer/payload/winhttp.dll` and rebuild the installer.
+```powershell
+cd loader/html-sky
+mingw32-make all                       # -> dist/winhttp.dll
+cp dist/winhttp.dll ../../installer/payload/winhttp.dll
+```
+
+Then rebuild the installer. Details, gotchas (a posix-threads toolchain builds
+fine but deadlocks the game) and how to refresh the signatures live in
+[`loader/README.md`](loader/README.md).
 
 ---
 

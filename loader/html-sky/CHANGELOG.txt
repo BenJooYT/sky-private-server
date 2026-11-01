@@ -1,0 +1,250 @@
+This file contains the changelog of HTModLoader.
+
+
+-------------------------------------------------------------------------------
+ Version 1.11.0 WIP
+-------------------------------------------------------------------------------
+
+
+-------------------------------------------------------------------------------
+ Version 1.10.3 (2026.10.04)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+- Moved all header files of HTML SDK to individual folder.
+
+
+-------------------------------------------------------------------------------
+ Version 1.10.2 (2026.08.21)
+-------------------------------------------------------------------------------
+
+Changes:
+- Fixed conflicting declarations of HTPath functions.
+- Added const modifiers for HTPath APIs.
+
+
+-------------------------------------------------------------------------------
+ Version 1.10.1 (2026.05.04)
+-------------------------------------------------------------------------------
+
+Changes:
+- Modified the assertion failure prompt.
+- Fix the issue where the HTPath API does not ignore maxLen when buffer is NULL.
+
+
+-------------------------------------------------------------------------------
+ Version 1.10.0 (2026.04.24)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+- Changed mod enabling to single-threaded.
+- Refactored ModManifest with the latest SemVer.
+- Added npm-like SemVer support.
+
+Changes:
+- Added HTAssert APIs.
+- Changed description of header sections.
+- Changed the description of `HTPathRelative`.
+- Fixed incorrect mouse events.
+- Fixed the issue where getting the mod directory actually returned the mod name.
+- Fixed an error when parsing version wildcards (by AI).
+- Renamed `htinternal.h` to `htinternal.hpp`.
+- Refactored backend register system.
+- Removed HTML_USE_IMPL_PROXY.
+
+
+-------------------------------------------------------------------------------
+ Version 1.9.0 (2025.12.03)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+- Added module handle requirement for `HTCommOnEvent()` and `HTCommOffEvent()`.
+- Changed `gGameProcessName` to wide string.
+
+Changes:
+- Exposed HTiPath functions as HTPath functions.
+- Added debugger menu.
+- Optimized the implementation of HTAsmHook functions.
+- Added validations for dll path and package name.
+- Changed the LOG macros to empty when disabling logs.
+- Added `HTiPathIsAbsolute()`.
+- Added HTiPath functions to concat or resolve paths.
+- Added `HTSigScanEx()` to scan signature codes in other modules.
+- Normalized all enum declarations.
+- Fixed the wrong placeholder during log printing when scanning the mods.
+
+
+-------------------------------------------------------------------------------
+ Version 1.8.2 (2025.12.09)
+-------------------------------------------------------------------------------
+
+Changes:
+- Added default log path.
+- Fixed the issue where the mod loader saved the runtime of mods that failed to
+  load the library.
+- Mod loader will set the dll searching directory to the folder of the mod.
+- Added preprocess configure to disable the logger.
+- Added namespace prefix for macros in htconfig.h
+- Changed glnull backend to not compile by default.
+- Added "null" backends as templates.
+- Fixed the unchanged module name in signature scanning.
+
+
+-------------------------------------------------------------------------------
+ Version 1.8.1 (2025.11.13)
+-------------------------------------------------------------------------------
+
+Changes:
+- Fixed the issue of hooks not being enabled.
+
+
+-------------------------------------------------------------------------------
+ Version 1.8.0 (2025.11.13)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+- Added demo for HTGetActiveBackendName().
+- Added HTGetActiveBackendName() to get currently active backends.
+- Fixed incorrect render of ImGui when the game changes glColorMask.
+- Changed gameEditionFlag to int32_t to allow more games.
+- Added OpenGL3 backend.
+- Added game backend for MCBE Chinese Edition.
+- Added `HT_ImplNull_EditionAll` to ignore edition check.
+- Added more backend functions to allow backends to customize game edition check
+  and ImGui initialize.
+- Use `htconfig.h` to enable or disable backends.
+- Allow customization of game and renderer backend code except for Sky:CotL.
+- Transfer all game related and platform related code to the `backends` folder.
+
+Other Changes:
+- Fixed incorrect function name `utf8ToWchar` in html_impl_vklayer.
+- Added HTDataStoreStringKey() and HTDataGetStringKey().
+- Added demo for HTDataStore() and HTDataGet().
+- Added HTDataStore() and HTDataGet() to save persistent data.
+- Introduced LevelDB and ZLib.
+- Vulkan layer implementaion will create `html-config.json` if missing.
+
+
+-------------------------------------------------------------------------------
+ Version 1.7.0 (2025.11.01)
+-------------------------------------------------------------------------------
+
+Changes:
+- Fixed the incorrect display of console text when multiple '\n' exist in a single
+  string.
+- The main menu won't reset its size on every launch of the game.
+- Fixed possible buffer overflow in HTML Console.
+- Formatted all function declarations in htmodloader.h and htinternal.hpp
+- Added HTOptionGetCustom() and HTOptionSetCustom() for mods to save their own options
+  and config.
+- Added demo for HTOptionGetCustom() and HTOptionSetCustom().
+- Now the game edition flags is checked when scanning mods instead of when expanding
+  mods.
+- The console will merge repeated lines to a single line.
+
+
+-------------------------------------------------------------------------------
+ Version 1.6.0 (2025.10.16)
+-------------------------------------------------------------------------------
+
+Changes:
+- Added HTGetLoaderVersion() and HTGetLoaderVersionName() to get the loader's
+  runtime version.
+- Added HTHotkeyBindGet() to get a bound key from a key binding.
+- Fixed the incorrect display of key bindings that were only read from the options
+  and not explicitly registered.
+- Added basic api demo for modtest.
+- User can move HTML Main Menu when switched to `Console` tab.
+- The console will scroll to the bottom automatically when new text is added.
+- Added shared mutex for the console texts.
+- Optimized HTGetModInfoFrom().
+- Added HTImGuiDispatch() to expose GImGui to mods that can't link htmodloader.lib.
+- Fixed incorrect display when scrolling console text when the last line is the
+  longest line.
+- Fixed incorrect width calculation of console text when the longest line is not visible.
+- Auto-scrolling now sets the X scroll value to 0.
+- Fixed a memory leak that occurred when saving options.json.
+
+
+-------------------------------------------------------------------------------
+ Version 1.5.0 (2025.10.12)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+
+- Updated ImGui to v1.92.2b.
+- Renamed `HTSignature` to `HTAsmSig`.
+- Removed `name` field in HTAsmSig.
+- Renamed `HTHookFunction` to `HTAsmFunction`.
+- Added `name` field in `HTAsmFunction`, for debug use.
+- Modified the order of field `fn` and field `detour` in the `HTAsmFunction`.
+- Added HTAsmHookCreateRaw(), HTAsmHookCreateAPI(), HTAsmHookCreate(), 
+  HTAsmHookEnable(), HTAsmHookDisable() to create and install hooks.
+- Added HTTellText(), HTTellTextV(), HTTellRaw(), HTTellRawV() to print texts
+  in the in-game console.
+- Used thread_local to storage error codes of HTSetLastError() and HTGetLastError().
+
+Other Changes:
+
+- The mod scanner will skip mods with the same package name among the scanned
+  mods.
+
+
+-------------------------------------------------------------------------------
+ Version 1.4.0-beta (2025.10.09)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+
+- Mods will be scanned and loaded when the game is creating main window.
+- Mod's exported HTModOnEnable() will be called when the game is started.
+
+Other Changes:
+
+- Fixed missing FindClose() of the mod scanner.
+- Renamed all internal functions.
+
+
+-------------------------------------------------------------------------------
+ Version 1.3.0-beta (2025.09.28)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+
+- Added HTSetLastError() and HTGetLastError() to get further info when the HTML
+  APIs has failed.
+- The mod loader will save the key binding data for the mods.
+
+Other Changes:
+
+
+-------------------------------------------------------------------------------
+ Version 1.2.0-beta (2025.09.25)
+-------------------------------------------------------------------------------
+
+Breaking Changes:
+
+- Removed includes/aliases.h. All typedefs of exported apis has changed to win-style.
+
+Other Changes:
+
+- Added key bind clearing, press ESC to set the key binding being changed to HTKey_None.
+- Mod loader will store the .ini file of ImGui in htmodloader/htmlgui.ini
+
+-------------------------------------------------------------------------------
+ Version 1.1.0-beta (2025.09.23)
+-------------------------------------------------------------------------------
+
+Changes:
+
+- Added HTKeyEventPreventFlags to modify visibility of key messages.
+- Changed mod folder structures.
+
+
+-------------------------------------------------------------------------------
+ Version 1.0.1-beta (2025.09.19)
+-------------------------------------------------------------------------------
+
+Changes:
+
+- Supported mouse wheel in HTHotkey APIs.
