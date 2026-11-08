@@ -170,6 +170,7 @@ char detourWsConnect(void *thisptr, const char *url, const char *host, void *arg
 
   bool changed = false;
   if (s.enabled) changed = applyUrl(url, rewritten, sizeof(rewritten), s);
+  tracef("ws -> %s (changed=%d)", rewritten, changed ? 1 : 0);
 
   char hostBuf[128];
   snprintf(hostBuf, sizeof(hostBuf), "%s", host ? host : "");
