@@ -46,6 +46,7 @@ creates a second set of backups.
     "enabled": true,
     "force_http": false,
     "account_from": "live.radiance.thatgamecompany.com",
+    "ws_from": "live.ws.radiance.thatgamecompany.com",
     "host": "my-server.example.com:9000"
   }
 }

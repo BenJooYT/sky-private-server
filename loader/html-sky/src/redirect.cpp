@@ -129,7 +129,7 @@ bool applyUrl(const char *url, char *dst, size_t n, const HTiRedirectSettings &s
     changed = true;
   }
 
-  if (!s.accountFrom.empty() && s.accountFrom == host) {
+  if (!s.wsFrom.empty() && s.wsFrom == host) {
     std::string toHost, toPort;
     const bool toHasPort = splitTarget(s.host, toHost, toPort);
     host = toHost;
@@ -224,12 +224,15 @@ void HTiRedirectLoadFromJson(const cJSON *root) {
     s.forceHttp = cJSON_IsTrue(v) != 0;
   if ((v = cJSON_GetObjectItemCaseSensitive(r, "account_from")) && cJSON_IsString(v))
     s.accountFrom = cJSON_GetStringValue(v);
+  if ((v = cJSON_GetObjectItemCaseSensitive(r, "ws_from")) && cJSON_IsString(v))
+    s.wsFrom = cJSON_GetStringValue(v);
   if ((v = cJSON_GetObjectItemCaseSensitive(r, "host")) && cJSON_IsString(v))
     s.host = cJSON_GetStringValue(v);
 
   HTiRedirectSetSettings(s);
-  LOGI("Redirect: enabled=%d force_http=%d %s -> '%s'\n", s.enabled ? 1 : 0,
-       s.forceHttp ? 1 : 0, s.accountFrom.c_str(), s.host.c_str());
+  LOGI("Redirect: enabled=%d force_http=%d http:'%s' ws:'%s' -> '%s'\n",
+       s.enabled ? 1 : 0, s.forceHttp ? 1 : 0, s.accountFrom.c_str(),
+       s.wsFrom.c_str(), s.host.c_str());
 }
 
 void HTiRedirectSaveToJson(cJSON *root) {
@@ -240,6 +243,7 @@ void HTiRedirectSaveToJson(cJSON *root) {
   cJSON_AddBoolToObject(r, "enabled", s.enabled);
   cJSON_AddBoolToObject(r, "force_http", s.forceHttp);
   cJSON_AddStringToObject(r, "account_from", s.accountFrom.c_str());
+  cJSON_AddStringToObject(r, "ws_from", s.wsFrom.c_str());
   cJSON_AddStringToObject(r, "host", s.host.c_str());
   cJSON_AddItemToObject(root, "redirect", r);
 }
@@ -321,7 +325,8 @@ void HTiRedirectRenderSettings() {
   }
 
   ImGui::TextDisabled("host or host:port, no scheme");
-  ImGui::Text("from:  %s", s.accountFrom.c_str());
-  ImGui::Text("to:    %s", s.host.empty() ? "(unset)" : s.host.c_str());
+  ImGui::Text("http from: %s", s.accountFrom.c_str());
+  ImGui::Text("ws   from: %s", s.wsFrom.c_str());
+  ImGui::Text("to:        %s", s.host.empty() ? "(unset)" : s.host.c_str());
   ImGui::Text("hits:  %llu http / %llu ws", gHttpHits, gWsHits);
 }

@@ -55,7 +55,14 @@ dotnet publish ../../installer/SkySwitch.csproj -c Release -r win-x64 \
   `Net::Uri { char protocol[10]; char domain[128]; char port[6]; char path[256]; }`
   and rewrites `domain`/`port` when `domain` equals `account_from`.
 - `AccountServerWebSocket::Connect` — receives the `/account/ws` URL as a string
-  and rewrites host/port the same way.
+  and rewrites host/port when the host equals `ws_from`.
+
+The two hosts are **different**:
+
+| Channel | `from` key | Default value |
+|---|---|---|
+| REST | `account_from` | `live.radiance.thatgamecompany.com` |
+| WebSocket | `ws_from` | `live.ws.radiance.thatgamecompany.com` |
 
 Settings are stored in `htmodloader/options.json` under `"redirect"` and are read
 on every request, so the in-game toggle and address edits apply immediately.
@@ -68,11 +75,13 @@ Default state is **disabled**.
 
 ### Which host to rewrite
 
-The account host is **`live.radiance.thatgamecompany.com`**; the CDN
+The hosts to rewrite are **`live.radiance.thatgamecompany.com`** (REST) and
+**`live.ws.radiance.thatgamecompany.com`** (WebSocket); the CDN
 (`live.sky.resources.cdn.thatgamecompany.com`) must be left alone. To confirm on
 a new game build, the patch writes what it sees to
 `<game>\htmodloader\redirect-debug.log` (`req: https://host/path` lines) for the
-first ~60 requests — copy the account host from there into `account_from`.
+first ~60 requests — copy the REST host into `account_from` and the WS host into
+`ws_from`.
 
 ### Signatures
 

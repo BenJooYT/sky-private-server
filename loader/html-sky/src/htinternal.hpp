@@ -580,6 +580,7 @@ struct HTiRedirectSettings {
   bool enabled = false;
   bool forceHttp = false;
   std::string accountFrom = "live.radiance.thatgamecompany.com";
+  std::string wsFrom = "live.ws.radiance.thatgamecompany.com";
   std::string host;
 };
 

@@ -36,14 +36,15 @@ private server, with a switch to go back to the official servers at any time.
 
 ## What it actually does
 
-Sky talks to `live.radiance.thatgamecompany.com` over HTTPS and a WebSocket.
-The loader hooks the two functions that build those requests and rewrites the
-destination host when it exactly matches the configured `from` host:
+Sky talks to two hosts — `live.radiance.thatgamecompany.com` over HTTPS and
+`live.ws.radiance.thatgamecompany.com` for the WebSocket. The loader hooks the
+two functions that build those requests and rewrites the destination host when
+it exactly matches the configured `from` host:
 
-| Hook | What it sees | What changes |
-|---|---|---|
-| `HttpClient::Request` | `Net::Uri { protocol, domain, port, path }` | `domain` + `port` |
-| `AccountServerWebSocket::Connect` | `https://host[:port]/account/ws` | URL string + host argument |
+| Hook | What it sees | `from` key | What changes |
+|---|---|---|---|
+| `HttpClient::Request` | `Net::Uri { protocol, domain, port, path }` | `account_from` | `domain` + `port` |
+| `AccountServerWebSocket::Connect` | `https://host[:port]/account/ws` | `ws_from` | URL string + host argument |
 
 Everything else (CDN, analytics, shop) is left alone unless `force_http` is on.
 
@@ -55,6 +56,7 @@ Settings live in `<game>\htmodloader\options.json`:
     "enabled": true,
     "force_http": false,
     "account_from": "live.radiance.thatgamecompany.com",
+    "ws_from": "live.ws.radiance.thatgamecompany.com",
     "host": "my-server.example.com:9000"
   }
 }
